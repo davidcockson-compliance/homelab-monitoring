@@ -1,22 +1,20 @@
 # Home Lab Monitoring Stack
 
-A lightweight monitoring stack for a Proxmox-based home server, providing operational visibility of host infrastructure and Docker containers via Prometheus and Grafana.
+A lightweight monitoring stack for a home server, providing operational visibility of host infrastructure and Docker containers via Prometheus and Grafana.
 
 ## Architecture
 
 ```
-Proxmox Host (HP ProDesk 600 G3 SFF)
-└── Ubuntu VM (Docker + Portainer)
+Host
+└── Linux VM (Docker)
     ├── Prometheus (:9090)      ← scrapes all exporters
     ├── Grafana (:3002)         ← queries Prometheus
     ├── node_exporter (:9100)   ← host CPU/RAM/Disk
     ├── Telegraf (:9273)        ← container metrics via Docker API
-    └── [Services: Plex, Gitea, Valheim, Job Radar, Scarlet Helix,
-         Homepage, Filebrowser, Syncthing, Immich, Uptime Kuma,
-         Nginx Proxy Manager, Web Prototypes, Portainer, ...]
+    └── [your other containers]
 ```
 
-Access: All services accessible via Tailscale mesh VPN. No public ports exposed.
+All services accessible via Tailscale mesh VPN. No public ports exposed.
 
 ## Tech Stack
 
@@ -30,9 +28,7 @@ Access: All services accessible via Tailscale mesh VPN. No public ports exposed.
 
 ### Why Telegraf instead of cAdvisor?
 
-cAdvisor failed to discover Docker containers due to a non-standard Docker data root (`/mnt/storage/docker` instead of `/var/lib/docker`) combined with cgroup v2 on Ubuntu. After multiple attempts with different cAdvisor versions (v0.51.0, v0.52.1) and configurations, Telegraf with its Docker input plugin was used instead — it reads directly from the Docker socket API and works regardless of the storage driver path.
-
-This is documented as a troubleshooting lesson: always verify your Docker data root (`docker info | grep "Docker Root Dir"`) before choosing a container metrics exporter.
+cAdvisor can fail to discover Docker containers when using a non-standard Docker data root combined with cgroup v2. Telegraf with its Docker input plugin reads directly from the Docker socket API and works regardless of the storage driver path.
 
 ## Quick Start
 
@@ -48,16 +44,16 @@ This is documented as a troubleshooting lesson: always verify your Docker data r
 docker network create monitoring
 ```
 
-### 2. Set your Grafana password
+### 2. Configure environment
 
 ```bash
-export GRAFANA_PASSWORD='your-strong-password-here'
+cp .env.example .env
+# Edit .env and set a strong GRAFANA_PASSWORD
 ```
 
 ### 3. Deploy the stack
 
 ```bash
-cd ~/monitoring
 docker compose up -d
 ```
 
@@ -111,26 +107,11 @@ Per-container metrics for all Docker services (monitoring stack filtered out):
 
 The dashboard JSON is committed at `grafana/dashboards/home-lab-overview.json`.
 
-## What I Learned
+## Customisation
 
-- **Valheim server** is the biggest resource consumer: ~1.1 GiB RAM and 6% CPU even when idle
-- **immich_machine_learning** holds 354 MiB in memory for the ML model, even when not processing photos
-- **Netdata** at ~300 MiB RAM is heavier than the entire Prometheus + Grafana + Telegraf + node_exporter stack combined (~170 MiB)
-- **cAdvisor** doesn't work with non-standard Docker data roots on cgroup v2 — Telegraf is a reliable alternative
-- The CPU spike pattern from 12:00-13:30 in the dashboard corresponds to deploying and troubleshooting the monitoring stack itself — a natural baseline event
-
-## What I'd Add Next
-
-| Priority | Enhancement | Why |
-|---|---|---|
-| 1 | smartctl_exporter | Replace broken Scrutiny with SMART disk health monitoring |
-| 2 | pve_exporter | Add Proxmox host-level visibility (requires API token) |
-| 3 | Second VM node_exporter | Extend to full infrastructure coverage |
-| 4 | Alertmanager | Get notified when things break (e.g. disk >90%) |
-| 5 | Splunk + log forwarding | Drill-down from metrics to actual log lines |
-| 6 | Cloudflare exporter | Monitor Scarlet Helix project traffic |
-| 7 | Grafana provisioning | Auto-load dashboards and datasources from config files |
-| 8 | Terraform | Codify the monitoring stack deployment as IaC |
+- **Telegraf GID**: The `user` field in `docker-compose.yml` uses a hardcoded Docker group ID. Find yours with `getent group docker` and update accordingly.
+- **Grafana port**: Defaults to `3002` — change the host port mapping in `docker-compose.yml` if needed.
+- **Prometheus retention**: Defaults to 14 days. Adjust `--storage.tsdb.retention.time` in `docker-compose.yml`.
 
 ## Repository Structure
 
@@ -144,11 +125,9 @@ homelab-monitoring/
 │   └── prometheus.yml
 ├── telegraf/
 │   └── telegraf.conf
-├── grafana/
-│   └── dashboards/
-│       └── home-lab-overview.json
-└── docs/
-    └── dashboard-screenshot.png
+└── grafana/
+    └── dashboards/
+        └── home-lab-overview.json
 ```
 
 ## Port Allocation
@@ -159,26 +138,14 @@ homelab-monitoring/
 | Grafana | 3002 | Tailscale only |
 | node_exporter | 9100 | Tailscale only |
 | Telegraf | 9273 | Tailscale only |
-| Docker Engine Metrics | 9323 | Tailscale only |
-
-Ports 3000 and 3001 were already in use by Homepage and Gitea respectively.
 
 ## Teardown
 
 ```bash
-cd ~/monitoring
 docker compose down
 docker volume rm monitoring_prometheus_data monitoring_grafana_data
 docker network rm monitoring
 ```
-
-## Notes
-
-- Docker data root is `/mnt/storage/docker` (configured in `/etc/docker/daemon.json`)
-- Docker engine metrics are enabled via `"metrics-addr": "0.0.0.0:9323"` in daemon.json
-- Prometheus scrape interval is 30s (sufficient for home lab; 15s doubles storage)
-- Prometheus retention is 14 days
-- The `version: "3.8"` key in docker-compose.yml generates a deprecation warning — it's ignored by modern Docker Compose and can be removed
 
 ## License
 
