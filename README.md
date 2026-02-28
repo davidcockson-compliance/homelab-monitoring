@@ -2,8 +2,11 @@
 
 A lightweight monitoring stack for a home server, providing operational visibility of host infrastructure and Docker containers via Prometheus and Grafana.
 
-## Architecture
+## Dashboard
 
+![Home Lab Overview Dashboard](preview.webp)
+
+## Architecture
 ```
 Host
 └── Linux VM (Docker)
@@ -33,32 +36,27 @@ cAdvisor can fail to discover Docker containers when using a non-standard Docker
 ## Quick Start
 
 ### Prerequisites
-
 - Docker and Docker Compose installed
 - An external Docker network named `monitoring`
 - Tailscale (optional, for remote access)
 
 ### 1. Create the network
-
 ```bash
 docker network create monitoring
 ```
 
 ### 2. Configure environment
-
 ```bash
 cp .env.example .env
 # Edit .env and set a strong GRAFANA_PASSWORD
 ```
 
 ### 3. Deploy the stack
-
 ```bash
 docker compose up -d
 ```
 
 ### 4. Verify
-
 ```bash
 # Prometheus healthy
 curl http://localhost:9090/-/healthy
@@ -74,16 +72,13 @@ curl -s http://localhost:9273/metrics | grep docker_container_mem_usage | head -
 ```
 
 ### 5. Connect Grafana to Prometheus
-
 1. Open Grafana at `http://<your-ip>:3002`
 2. Log in with `admin` / your password
-3. **Connections → Data Sources → Add → Prometheus**
+3. Connections → Data Sources → Add → Prometheus
 4. URL: `http://prometheus:9090`
-5. **Save & Test**
+5. Save & Test
 
-## Dashboard
-
-The "Home Lab Overview" dashboard provides two-tier visibility:
+## Dashboard Panels
 
 ### VM Health Row
 Three gauges showing host resource utilisation with traffic-light thresholds:
@@ -101,7 +96,6 @@ Per-container metrics for all Docker services (monitoring stack filtered out):
 |---|---|---|
 | Container Memory | Bar gauge | `sort_desc(docker_container_mem_usage{container_name!~"prometheus\|grafana\|telegraf\|node-exporter"})` |
 | Container CPU % | Time series | `docker_container_cpu_usage_percent{container_name!~"prometheus\|grafana\|telegraf\|node-exporter"}` |
-| Container CPU % | Bar gauge | `sort_desc(docker_container_cpu_usage_percent{container_name!~"prometheus\|grafana\|telegraf\|node-exporter"})` |
 | Top 5 Memory | Bar gauge | Top consumers by RAM |
 | Container Restarts (24h) | Stat | `changes(docker_container_status{...container_status="running"}[24h]) > 0` |
 
@@ -109,15 +103,15 @@ The dashboard JSON is committed at `grafana/dashboards/home-lab-overview.json`.
 
 ## Customisation
 
-- **Telegraf GID**: The `user` field in `docker-compose.yml` uses a hardcoded Docker group ID. Find yours with `getent group docker` and update accordingly.
-- **Grafana port**: Defaults to `3002` — change the host port mapping in `docker-compose.yml` if needed.
-- **Prometheus retention**: Defaults to 14 days. Adjust `--storage.tsdb.retention.time` in `docker-compose.yml`.
+- **Telegraf GID:** The `user` field in `docker-compose.yml` uses a hardcoded Docker group ID. Find yours with `getent group docker` and update accordingly.
+- **Grafana port:** Defaults to 3002 — change the host port mapping in `docker-compose.yml` if needed.
+- **Prometheus retention:** Defaults to 14 days. Adjust `--storage.tsdb.retention.time` in `docker-compose.yml`.
 
 ## Repository Structure
-
 ```
 homelab-monitoring/
 ├── README.md
+├── preview.webp
 ├── .env.example
 ├── .gitignore
 ├── docker-compose.yml
@@ -140,7 +134,6 @@ homelab-monitoring/
 | Telegraf | 9273 | Tailscale only |
 
 ## Teardown
-
 ```bash
 docker compose down
 docker volume rm monitoring_prometheus_data monitoring_grafana_data
