@@ -9,8 +9,9 @@ A lightweight monitoring stack for a home server, providing operational visibili
 ## Architecture
 ```
 Host
+├── tailscaled                  ← exposes Tailscale client metrics
 └── Linux VM (Docker)
-    ├── Prometheus (:9090)      ← scrapes all exporters
+    ├── Prometheus (:9090)      ← scrapes all exporters + tailscaled
     ├── Grafana (:3002)         ← queries Prometheus
     ├── node_exporter (:9100)   ← host CPU/RAM/Disk
     ├── Telegraf (:9273)        ← container metrics via Docker API
@@ -27,6 +28,7 @@ All services accessible via Tailscale mesh VPN. No public ports exposed.
 | Grafana | 12.3.0 | Dashboard visualisation |
 | node_exporter | v1.10.2 | Host-level CPU, RAM, Disk, Network metrics |
 | Telegraf | 1.33 | Container metrics via Docker socket API |
+| tailscaled | — | Tailscale client metrics (built-in Prometheus endpoint) |
 | Docker Compose | v2 | Service orchestration |
 
 ### Why Telegraf instead of cAdvisor?
@@ -101,11 +103,61 @@ Per-container metrics for all Docker services (monitoring stack filtered out):
 
 The dashboard JSON is committed at `grafana/dashboards/home-lab-overview.json`.
 
+### Tailscale Monitoring
+
+A second dashboard provides visibility into the Tailscale mesh network using metrics exposed by the `tailscaled` daemon. It uses the [Tailscale / Machine](https://grafana.com/grafana/dashboards/24178-tailscale-machine/) dashboard from the [tailscale-mixin](https://github.com/adinhodovic/tailscale-exporter/tree/main/tailscale-mixin) project.
+
+#### Enabling tailscaled metrics
+
+Tailscale exposes Prometheus-compatible metrics from the daemon. Enable the metrics endpoint and verify it is working:
+
+```bash
+# Option 1: Via the built-in web client
+tailscale set --webclient
+
+# Option 2: Write metrics to a file for node_exporter textfile collector
+tailscale metrics write /path/to/metrics.prom
+```
+
+See the [Tailscale client metrics documentation](https://tailscale.com/kb/1482/client-metrics) for full details.
+
+#### Prometheus scrape config
+
+Add each Tailscale node as a target in `prometheus/prometheus.yml` under the `tailscaled` job. The `tailscale_machine` label is required by the dashboard for per-machine filtering:
+
+```yaml
+- job_name: 'tailscaled'
+  static_configs:
+    - targets: ['<tailscale-ip>:<metrics-port>']
+      labels:
+        tailscale_machine: '<hostname>'
+```
+
+Replace the placeholders with your node's Tailscale IP and the port the metrics endpoint is listening on. Add additional `targets` entries for each node you want to monitor.
+
+#### Dashboard panels
+
+| Section | Panels |
+|---|---|
+| Summary | Machine count, advertised/approved routes, path distributions, inbound vs outbound traffic, dropped packets by reason |
+| Network Summary | Health messages by type, dropped packets by reason, inbound/outbound bytes and packets by path |
+| Per-Machine (repeating) | Advertised/approved routes, DERP vs non-DERP traffic, dropped packets, health messages, bytes and packets by path |
+
+The dashboard JSON is committed at `grafana/dashboards/tailscale-machine.json`.
+
 ## Customisation
 
 - **Telegraf GID:** The `user` field in `docker-compose.yml` uses a hardcoded Docker group ID. Find yours with `getent group docker` and update accordingly.
 - **Grafana port:** Defaults to 3002 — change the host port mapping in `docker-compose.yml` if needed.
 - **Prometheus retention:** Defaults to 14 days. Adjust `--storage.tsdb.retention.time` in `docker-compose.yml`.
+
+## Published Dashboards
+
+The container monitoring dashboard from this project is published on Grafana Labs as a community dashboard:
+
+- [Docker Container Monitoring — Telegraf + Prometheus (no cAdvisor)](https://grafana.com/grafana/dashboards/25012-pickles-container-overview-v2-telegraf/) (ID: 25012)
+
+It was created because existing Docker monitoring dashboards rely on cAdvisor, which fails silently on setups with cgroup v2 and non-standard Docker data roots. This dashboard uses Telegraf's Docker input plugin via the Docker socket instead.
 
 ## Repository Structure
 ```
@@ -121,7 +173,8 @@ homelab-monitoring/
 │   └── telegraf.conf
 └── grafana/
     └── dashboards/
-        └── home-lab-overview.json
+        ├── home-lab-overview.json
+        └── tailscale-machine.json
 ```
 
 ## Port Allocation

@@ -17,3 +17,9 @@ scrape_configs:
   - job_name: 'docker'
     static_configs:
       - targets: ['telegraf:9273']
+
+  - job_name: 'tailscaled'
+    static_configs:
+      - targets: ['<tailscale-ip>:<metrics-port>']
+        labels:
+          tailscale_machine: '<hostname>'
